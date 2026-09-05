@@ -36,21 +36,17 @@ export async function scrapeSnapdeal(query: string): Promise<ProductResult[]> {
 
     // Navigate the page to a URL
     await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
+      waitUntil: 'domcontentloaded',
+      timeout: 15000,
     });
-
-    // Wait for page to load
-    await new Promise(resolve => setTimeout(resolve, 3000));
 
     // Try to wait for products with fallback
     try {
       await page.waitForSelector('div.product-tuple-listing, div.product-tuple, [class*="product"]', {
-        timeout: 10000,
+        timeout: 5000,
       });
     } catch (e) {
-      console.log('⚠️ Snapdeal: Waiting for products...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log('⚠️ Snapdeal: Quick selector wait timed out, continuing to evaluate...');
     }
 
     const products = await page.evaluate(() => {

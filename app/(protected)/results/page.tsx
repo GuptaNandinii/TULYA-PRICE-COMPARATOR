@@ -364,8 +364,9 @@ function ResultsContent() {
     );
   }
 
-  <>
-    <main className="page-fade-in min-h-[calc(100vh-56px)] bg-slate-50/80 dark:bg-slate-950 px-4 py-10 pb-28 backdrop-blur-sm">
+  return (
+    <>
+      <main className="page-fade-in min-h-[calc(100vh-56px)] bg-slate-50/80 dark:bg-slate-950 px-4 py-10 pb-28 backdrop-blur-sm">
       <div className="mx-auto max-w-7xl">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
@@ -532,6 +533,7 @@ function ResultsContent() {
     {/* Back to Top */}
     <BackToTop />
   </>
+  );
 }
 
 export default function ResultsPage() {

@@ -48,42 +48,18 @@ export async function scrapeAmazon(query: string): Promise<ProductResult[]> {
 
     // Navigate the page to a URL
     await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
+      waitUntil: 'domcontentloaded',
+      timeout: 15000,
     });
 
     // Wait for product results with multiple fallback selectors
     try {
-      await page.waitForSelector('div.s-result-item[data-component-type="s-search-result"]', {
-        timeout: 15000,
+      await page.waitForSelector('div.s-result-item[data-component-type="s-search-result"], .s-result-item, [data-asin]', {
+        timeout: 5000,
       });
     } catch (e) {
-      // Try alternative selector
-      try {
-        await page.waitForSelector('.s-result-item, [data-asin]', { timeout: 5000 });
-      } catch (e2) {
-        console.log('⚠️ Amazon: No products found with standard selectors');
-        try {
-          // Debugging: Save screenshot and HTML to understand why
-          const timestamp = Date.now();
-          await page.screenshot({ path: `amazon-debug-${timestamp}.png` });
-          const html = await page.content();
-          console.log(`Debug: Saved screenshot to amazon-debug-${timestamp}.png`);
-          // Log page title to see if we hit a captcha
-          const pageTitle = await page.title();
-          console.log(`Debug: Page title is "${pageTitle}"`);
-          // Check for common captcha text
-          if (html.includes('Enter the characters you see below') || pageTitle.includes('Robot Check')) {
-            console.log('❌ HIT AMAZON CAPTCHA/BOT DETECTION');
-          }
-        } catch (debugErr) {
-          console.error('Failed to save debug info:', debugErr);
-        }
-      }
+      console.log('⚠️ Amazon: Quick selector wait timed out, continuing to evaluate...');
     }
-
-    // Add small delay to ensure page is fully loaded
-    await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Extract up to 10 products
     const products = await page.evaluate(() => {

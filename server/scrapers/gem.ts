@@ -36,12 +36,18 @@ export async function scrapeGeM(query: string): Promise<ProductResult[]> {
 
     // Navigate the page to a URL
     await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
+      waitUntil: 'domcontentloaded',
+      timeout: 15000,
     });
 
-    // Wait for page to load - GeM uses Angular/React so needs more time
-    await new Promise(resolve => setTimeout(resolve, 4000));
+    // Wait for page to load dynamic content
+    try {
+      await page.waitForSelector('div.product-item, div.mat-card, .product-card, a[href*="/product/"]', {
+        timeout: 5000,
+      });
+    } catch {
+      console.log('⚠️ GeM: Quick selector wait timed out, continuing to evaluate...');
+    }
 
     const products = await page.evaluate(() => {
       const items: Array<{ site: string; title: string; price: string; image: string; link: string }> = [];

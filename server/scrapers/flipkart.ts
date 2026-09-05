@@ -36,12 +36,16 @@ export async function scrapeFlipkart(query: string): Promise<ProductResult[]> {
 
     // Navigate the page to a URL
     await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
+      waitUntil: 'domcontentloaded',
+      timeout: 15000,
     });
 
-    // Wait longer for dynamic content to load
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Wait for product links to appear
+    try {
+      await page.waitForSelector('a[href*="/p/"]', { timeout: 5000 });
+    } catch {
+      console.log('⚠️ Flipkart: Quick selector wait timed out, continuing to evaluate...');
+    }
 
     const products = await page.evaluate(() => {
       const items: Array<{ site: string; title: string; price: string; image: string; link: string }> = [];

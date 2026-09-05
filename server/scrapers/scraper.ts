@@ -6,15 +6,36 @@ import { scrapeGeM } from './gem';
 import { scrapeSnapdeal } from './snapdeal';
 import { ProductResult } from './utils';
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T, name: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`⏱️ ${name} exceeded ${timeoutMs}ms limit, skipping...`);
+      resolve(fallback);
+    }, timeoutMs);
+  });
+
+  return Promise.race([
+    promise.then((res) => {
+      clearTimeout(timer);
+      return res;
+    }).catch((err) => {
+      clearTimeout(timer);
+      throw err;
+    }),
+    timeoutPromise,
+  ]);
+}
+
 export async function runAllScrapers(query: string): Promise<ProductResult[]> {
   console.log(`🚀 Starting scraping for: "${query}"`);
 
-  // Run all scrapers in parallel (each uses its own page, so no conflict)
+  // Run all scrapers in parallel with a 12s safety timeout per scraper
   const results = await Promise.allSettled([
-    scrapeAmazon(query),
-    scrapeFlipkart(query),
-    scrapeGeM(query),
-    scrapeSnapdeal(query),
+    withTimeout(scrapeAmazon(query), 12000, [], 'Amazon'),
+    withTimeout(scrapeFlipkart(query), 12000, [], 'Flipkart'),
+    withTimeout(scrapeGeM(query), 12000, [], 'GeM'),
+    withTimeout(scrapeSnapdeal(query), 12000, [], 'Snapdeal'),
   ]);
 
   // Flatten all results and filter valid products
