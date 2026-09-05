@@ -14,7 +14,11 @@
 ## 📑 Table of Contents
 - [✨ Key Features](#-key-features)
 - [🛒 Supported Marketplaces](#-supported-marketplaces)
-- [🧠 How It Works & Architecture](#-how-it-works--architecture)
+- [📐 Architectural Diagrams](#-architectural-diagrams)
+  - [1. System Architecture Overview](#1-system-architecture-overview)
+  - [2. Multi-Vendor Scraping & Fallback Pipeline](#2-multi-vendor-scraping--fallback-pipeline)
+  - [3. Semantic Relevance & Noise Filter Flow](#3-semantic-relevance--noise-filter-flow)
+  - [4. User Journey & Comparison Workflow](#4-user-journey--comparison-workflow)
 - [🛠️ Tech Stack](#️-tech-stack)
 - [📂 Project Structure](#-project-structure)
 - [🚀 Getting Started](#-getting-started)
@@ -62,37 +66,161 @@
 
 ---
 
-## 🧠 How It Works & Architecture
+## 📐 Architectural Diagrams
+
+### 1. System Architecture Overview
+
+This diagram represents the end-to-end infrastructure, showing how Next.js App Router, Server Actions, the Puppeteer Browser Pool, and the SQLite database interact:
 
 ```mermaid
-graph TD
-    A[User Enters Query] --> B[Next.js Server Action: comparePrices]
-    B --> C[Scraper Coordinator: runAllScrapers]
-    
-    subgraph Parallel Scraper Pool
-        C -->|Thread 1| D[Amazon Scraper]
-        C -->|Thread 2| E[Flipkart Scraper]
-        C -->|Thread 3| F[Snapdeal Scraper]
-        C -->|Thread 4| G[GeM Scraper]
+flowchart TB
+    subgraph Client["Client Tier (Browser)"]
+        UI["Modern UI (Tailwind CSS)"]
+        SearchInput["Search Bar / Filter Controls"]
+        Drawer["Comparison Drawer & Side-by-Side Modal"]
     end
-    
-    D --> H[Fast DOM Extraction]
-    E --> H
-    F --> H
-    G --> H
-    
-    H --> I[Filter & Deduplicate Results]
-    I --> J[Negative Keyword & Accessory Pruning]
-    J --> K[Relevance Scoring & Price Normalization]
-    K --> L[Render Unified Comparison Dashboard]
+
+    subgraph AppRouter["Next.js Server Tier (Node.js)"]
+        Middleware["Session Middleware (Route Gatekeeper)"]
+        ServerAction["Server Actions (comparePrices / auth)"]
+        AuthModule["Authentication & Password Hashing (bcryptjs)"]
+    end
+
+    subgraph EngineTier["Scraping Engine Tier"]
+        BrowserPool["Shared Chromium Browser Pool (Puppeteer Stealth)"]
+        ScraperCoord["Scraper Coordinator (runAllScrapers)"]
+        AmzWorker["Amazon Worker (Isolated Page)"]
+        FlpWorker["Flipkart Worker (Isolated Page)"]
+        SnpWorker["Snapdeal Worker (Isolated Page)"]
+        GemWorker["GeM Worker (Isolated Page)"]
+    end
+
+    subgraph DataStorage["Data & State Tier"]
+        DB[(SQLite - dev.db)]
+        PrismaORM["Prisma ORM Client"]
+    end
+
+    UI --> SearchInput
+    SearchInput -->|POST / Server Action| Middleware
+    Middleware --> ServerAction
+    ServerAction --> AuthModule
+    AuthModule --> PrismaORM
+    PrismaORM --> DB
+
+    ServerAction --> ScraperCoord
+    ScraperCoord --> BrowserPool
+    BrowserPool --> AmzWorker
+    BrowserPool --> FlpWorker
+    BrowserPool --> SnpWorker
+    BrowserPool --> GemWorker
+
+    AmzWorker --> ScraperCoord
+    FlpWorker --> ScraperCoord
+    SnpWorker --> ScraperCoord
+    GemWorker --> ScraperCoord
+
+    ScraperCoord -->|Cleaned, Ranked Array| ServerAction
+    ServerAction -->|JSON Stream| UI
+    UI --> Drawer
 ```
 
-1. **Submission**: User inputs a search query on the search bar.
-2. **Parallel Dispatch**: The server action initializes or reuses an active Puppeteer browser and dispatches independent page tabs for all vendors concurrently.
-3. **DOM-Level Extraction**: Waits only until `domcontentloaded` and target product selector trees appear, bypassing slow asset downloads.
-4. **Data Cleansing**: Extracts currency symbols, normalizes numeric integer prices, resolves relative URLs, and captures high-res images.
-5. **Heuristic Scoring**: Re-ranks results by matching brand and model tokens, discarding accessories unless explicitly asked for.
-6. **Delivery**: Next.js streams the sorted results back to the client interface.
+---
+
+### 2. Multi-Vendor Scraping & Fallback Pipeline
+
+This sequence details how parallel requests are dispatched with safety timeout wrappers to ensure that individual site latency never stalls the user experience:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User
+    participant Page as Results Page
+    participant Actions as comparePrices()
+    participant Engine as Scraper Orchestrator
+    participant Pool as Puppeteer Browser
+    participant Vendors as E-Commerce Websites
+
+    User->>Page: Enters "iPhone 15" & hits search
+    Page->>Actions: Invokes Server Action
+    Actions->>Engine: runAllScrapers("iPhone 15")
+    Engine->>Pool: Acquire Browser Instance
+    
+    par Concurrent Extraction with 12s Guard
+        Engine->>Vendors: Amazon (domcontentloaded + selector wait)
+        Engine->>Vendors: Flipkart (domcontentloaded + selector wait)
+        Engine->>Vendors: Snapdeal (domcontentloaded + selector wait)
+        Engine->>Vendors: GeM (domcontentloaded + 12s timeout)
+    end
+
+    Vendors-->>Engine: Amazon: 8 products returned (~3.5s)
+    Vendors-->>Engine: Flipkart: 10 products returned (~4.0s)
+    Vendors-->>Engine: Snapdeal: 10 products returned (~3.0s)
+    Vendors-->>Engine: GeM: Timeout fallback or 0 items (~12s limit)
+
+    Engine->>Engine: Deduplicate & Normalize Prices (₹ numeric)
+    Engine->>Actions: Return 28 Valid Products
+    Actions-->>Page: Stream Products to Client
+    Page-->>User: Instant Display with Best-Price Highlights
+```
+
+---
+
+### 3. Semantic Relevance & Noise Filter Flow
+
+Tulya filters out unwanted accessories (such as cases, glass protectors, and charging cords) to surface only actual device listings:
+
+```mermaid
+flowchart TD
+    Raw["Raw Scraped Product Stream"] --> Norm["Normalise Title (lowercase, remove symbols)"]
+    Norm --> CheckAccessory{"Contains Negative Keyword?\n(case, cover, glass, pouch, protector)"}
+
+    CheckAccessory -- YES --> Drop["Discard Listing (relevance = 0)"]
+    CheckAccessory -- NO --> Tokenize["Tokenize Query Intent & Match Brand"]
+
+    Tokenize --> BrandMatch{"Brand matches\nquery brand?"}
+    BrandMatch -- YES --> AddBrand["Add +35 Brand Match Score"]
+    BrandMatch -- NO --> ModelTokens["Evaluate Model Tokens"]
+
+    AddBrand --> ModelTokens
+    ModelTokens --> CalcModel{"Model tokens\npresent in title?"}
+    CalcModel -- Exact Match --> AddModelHigh["Add up to +50 Model Score"]
+    CalcModel -- Partial / Plural --> AddModelMid["Add up to +30 Partial Score"]
+    CalcModel -- No Match --> LooseTokens["Check Loose Query Tokens"]
+
+    AddModelHigh --> LooseTokens
+    AddModelMid --> LooseTokens
+
+    LooseTokens --> FinalScore["Compute Final Score (0 - 100)"]
+    FinalScore --> SortRank["Sort by Relevance or Price Ascending"]
+    SortRank --> RenderView["Present to User"]
+```
+
+---
+
+### 4. User Journey & Comparison Workflow
+
+```mermaid
+stateDiagram-v2
+    [*] --> LoginState: Visit App
+    LoginState --> DemoLogin: Click "Auto-fill demo credentials"
+    DemoLogin --> Dashboard: Animated Typing & Auto-Submit
+    
+    Dashboard --> SearchQuery: Enter search term
+    SearchQuery --> ResultsListing: View Results Grouped by Vendor
+    
+    state ResultsListing {
+        [*] --> AllView
+        AllView --> FilterBySite: Amazon / Flipkart / Snapdeal / GeM
+        AllView --> FilterByPrice: Under 20k / 20k-40k
+        AllView --> SortResults: Price Low-to-High / Relevance
+    }
+
+    ResultsListing --> SelectProducts: Select Multiple Items
+    SelectProducts --> ComparisonDrawer: Items Docked in Floating Bar
+    ComparisonDrawer --> ComparisonModal: Open Comparison Table
+    ComparisonModal --> PurchaseLink: Click direct link to store
+    PurchaseLink --> [*]
+```
 
 ---
 
