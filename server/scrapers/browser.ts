@@ -36,6 +36,8 @@ export async function getBrowser(): Promise<Browser> {
         "--disable-web-security",
         "--disable-features=IsolateOrigins,site-per-process",
         "--ignore-certificate-errors",
+        "--single-process",
+        "--no-zygote",
       ],
     });
 
