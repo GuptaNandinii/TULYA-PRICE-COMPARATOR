@@ -30,12 +30,12 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T, nam
 export async function runAllScrapers(query: string): Promise<ProductResult[]> {
   console.log(`🚀 Starting scraping for: "${query}"`);
 
-  // Run all scrapers in parallel with a 12s safety timeout per scraper
+  // Run all scrapers in parallel with realistic timeout for cloud environments
   const results = await Promise.allSettled([
-    withTimeout(scrapeAmazon(query), 12000, [], 'Amazon'),
-    withTimeout(scrapeFlipkart(query), 12000, [], 'Flipkart'),
-    withTimeout(scrapeGeM(query), 12000, [], 'GeM'),
-    withTimeout(scrapeSnapdeal(query), 12000, [], 'Snapdeal'),
+    withTimeout(scrapeAmazon(query), 25000, [], 'Amazon'),
+    withTimeout(scrapeFlipkart(query), 25000, [], 'Flipkart'),
+    withTimeout(scrapeGeM(query), 10000, [], 'GeM'),
+    withTimeout(scrapeSnapdeal(query), 25000, [], 'Snapdeal'),
   ]);
 
   // Flatten all results and filter valid products

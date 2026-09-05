@@ -34,11 +34,16 @@ export async function scrapeGeM(query: string): Promise<ProductResult[]> {
     const url = `https://mkp.gem.gov.in/search?q=${encodeURIComponent(query)}`;
     console.log(`🔍 GeM: Searching for "${query}"`);
 
-    // Navigate the page to a URL
-    await page.goto(url, {
-      waitUntil: 'domcontentloaded',
-      timeout: 15000,
-    });
+    // Navigate the page to a URL with error safety
+    try {
+      await page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 10000,
+      });
+    } catch (e) {
+      console.warn('⚠️ GeM: Connection refused or timed out, skipping GeM.');
+      return [];
+    }
 
     // Wait for page to load dynamic content
     try {
